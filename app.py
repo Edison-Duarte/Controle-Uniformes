@@ -1,67 +1,80 @@
 import streamlit as st
+from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 from datetime import datetime
 
-# Configurações da página
-st.set_page_config(page_title="Controle de Uniformes", layout="wide")
+# Configuração da Página
+st.set_page_config(page_title="Protocolo de Uniformes", page_icon="👕")
 
-st.title("👕 Sistema de Controle de Uniformes")
+st.title("👕 Protocolo Digital de Uniformes")
+st.markdown("Registre as entregas e trocas de uniformes para controle administrativo.")
 
-# --- SIDEBAR: Filtros e Status ---
-st.sidebar.header("Painel de Controle")
-aba = st.sidebar.radio("Navegação", ["Registrar Entrega/Troca", "Estoque Atual", "Relatório de Pendências"])
+# Conexão com Google Sheets
+conn = st.connection("gsheets", type=GSheetsConnection)
 
-# --- MOCK DATA (Substitua pela conexão com seu Banco de Dados) ---
-# Aqui simulamos uma lista de funcionários e peças
-funcionarios = ["João Silva", "Maria Souza", "Carlos Oliveira", "Ana Costa"]
-pecas_disponiveis = ["Camiseta Polo M", "Camiseta Polo G", "Calça Operacional 42", "Calça Operacional 44", "Bota de Segurança 40"]
-
-if aba == "Registrar Entrega/Troca":
-    st.subheader("Nova Movimentação")
-    
-    with st.form("form_uniforme", clear_on_submit=True):
+# --- ENTRADA DE DADOS ---
+with st.container(border=True):
+    with st.form("form_registro", clear_on_submit=True):
         col1, col2 = st.columns(2)
         
         with col1:
-            data_entrega = st.date_input("Data da Entrega", datetime.now())
-            funcionario = st.selectbox("Selecione o Funcionário", funcionarios)
-            setor = st.text_input("Setor")
+            data = st.date_input("Data da Ação", datetime.now()).strftime('%d/%m/%Y')
+            funcionario = st.text_input("Nome Completo do Funcionário")
+            setor = st.selectbox("Setor/Departamento", 
+                               ["Náutica", "Administração", "Manutenção", "Portaria", "Limpeza", "Copa/Cozinha"])
         
         with col2:
-            tipo_acao = st.selectbox("Tipo de Ação", ["Admissão", "Troca por Desgaste", "Substituição (Dano)", "Devolução (Desligamento)"])
-            peca_entregue = st.multiselect("Peças Sendo Entregues", pecas_disponiveis)
-        
+            tipo_acao = st.selectbox("Tipo de Movimentação", 
+                                   ["Entrega Inicial (Admissão)", "Troca por Desgaste", "Substituição (Dano)", "Devolução Final"])
+            pecas_entregues = st.text_input("Peças Entregues (Ex: 2 Bermudas M, 1 Boné)")
+            
         st.divider()
         
-        # Lógica de Obrigatoriedade de Devolução
-        st.warning("⚠️ Para trocas, a devolução das peças antigas é obrigatória.")
-        pecas_devolvidas = st.text_area("Descreva as peças que foram DEVOLVIDAS (Ex: 2 camisetas desgastadas)")
+        # Campo de devolução (obrigatório se for troca)
+        pecas_devolvidas = st.text_area("Peças Recebidas de Volta (Obrigatório para trocas)")
+        obs = st.text_input("Observações (Ex: Tamanho especial, ajuste de costura)")
         
-        condicao_devolucao = st.select_slider(
-            "Condição das peças devolvidas",
-            options=["N/A", "Muito Desgastada", "Dano por mau uso", "Em bom estado"]
-        )
+        confirmacao = st.checkbox("Confirmo que o funcionário conferiu as peças entregues.")
+        
+        btn_salvar = st.form_submit_button("Finalizar e Salvar Registro")
 
-        observacoes = st.text_input("Observações Adicionais")
-        
-        submit = st.form_submit_button("Registrar Movimentação")
-        
-        if submit:
-            if tipo_acao == "Troca por Desgaste" and not pecas_devolvidas:
-                st.error("Erro: Não é possível registrar uma troca sem descrever as peças devolvidas.")
+        if btn_salvar:
+            if not funcionario or not pecas_entregues:
+                st.error("Por favor, preencha o nome do funcionário e o que está sendo entregue.")
+            elif "Troca" in tipo_acao and not pecas_devolvidas:
+                st.warning("⚠️ Para trocas, você deve descrever o que foi devolvido no campo acima.")
+            elif not confirmacao:
+                st.error("Por favor, marque o campo de confirmação.")
             else:
-                # Aqui entra sua lógica de 'st.session_state' ou 'db.insert()'
-                st.success(f"Registro realizado com sucesso para {funcionario}!")
+                # Criar DataFrame com a nova linha
+                nova_movimentacao = pd.DataFrame([{
+                    "Data": data,
+                    "Funcionario": funcionario,
+                    "Setor": setor,
+                    "Ação": tipo_acao,
+                    "Entregue": pecas_entregues,
+                    "Devolvido": pecas_devolvidas,
+                    "Obs": obs
+                }])
+                
+                # Ler dados atuais e concatenar
+                df_atual = conn.read(worksheet="movimentacoes")
+                df_final = pd.concat([df_atual, nova_movimentacao], ignore_index=True)
+                
+                # Salvar na Planilha
+                conn.update(worksheet="movimentacoes", data=df_final)
+                
+                st.success(f"Registro de {funcionario} salvo com sucesso!")
                 st.balloons()
 
-elif aba == "Relatório de Pendências":
-    st.subheader("Funcionários com trocas pendentes ou histórico")
-    # Simulação de DataFrame para visualização rápida
-    df_exemplo = pd.DataFrame({
-        'Data': ['01/04/2026', '05/04/2026'],
-        'Funcionário': ['João Silva', 'Ana Costa'],
-        'Entregue': ['2x Polo M', '1x Bota 40'],
-        'Devolvido': ['Pendente', '1x Bota Velha'],
-        'Status': ['🔴 Pendente', '🟢 Ok']
-    })
-    st.table(df_exemplo)
+# --- VISUALIZAÇÃO DOS ÚLTIMOS REGISTROS ---
+st.subheader("📋 Histórico de Entregas")
+try:
+    dados_exibicao = conn.read(worksheet="movimentacoes")
+    if not dados_exibicao.empty:
+        # Mostra os 10 registros mais recentes no topo
+        st.dataframe(dados_exibicao.iloc[::-1].head(10), use_container_width=True)
+    else:
+        st.info("Aguardando o primeiro registro...")
+except:
+    st.error("Erro ao carregar a planilha. Verifique a conexão nos Secrets.")
