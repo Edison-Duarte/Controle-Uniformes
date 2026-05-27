@@ -4,16 +4,27 @@ import pandas as pd
 from datetime import datetime
 
 # Configuração da Página
-st.set_page_config(page_title="Protocolo de Uniformes", page_icon="👕")
+st.set_page_config(page_title="Controle de Uniformes", page_icon="👕", layout="wide")
 
-st.title("👕 Protocolo Digital de Uniformes")
-st.markdown("Registre as entregas e trocas de uniformes para controle administrativo.")
+st.title("👕 Sistema de Registro de Uniformes")
+st.markdown("Os dados abaixo são sincronizados diretamente com o Google Sheets.")
 
 # Conexão com Google Sheets
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-# --- ENTRADA DE DADOS ---
+# --- CARREGAR HISTÓRICO ---
+# ttl=0 garante que o Streamlit sempre busque os dados mais recentes sem usar cache antigo
+try:
+    df_historico = conn.read(worksheet="movimentacoes", ttl=0)
+    # Remove colunas fantasma se houverem
+    df_historico = df_historico.loc[:, ~df_historico.columns.str.contains('^Unnamed')]
+except Exception as e:
+    st.error(f"Erro ao conectar com a planilha: {e}")
+    df_historico = pd.DataFrame(columns=["Data", "Funcionario", "Setor", "Acao", "Entregue", "Devolvido", "Obs"])
+
+# --- FORMULÁRIO DE REGISTRO ---
 with st.container(border=True):
+    st.subheader("➕ Nova Movimentação")
     with st.form("form_registro", clear_on_submit=True):
         col1, col2 = st.columns(2)
         
@@ -30,51 +41,52 @@ with st.container(border=True):
             
         st.divider()
         
-        # Campo de devolução (obrigatório se for troca)
+        # Regra de negócio da devolução obrigatória
         pecas_devolvidas = st.text_area("Peças Recebidas de Volta (Obrigatório para trocas)")
-        obs = st.text_input("Observações (Ex: Tamanho especial, ajuste de costura)")
+        obs = st.text_input("Observações Gerais")
         
-        confirmacao = st.checkbox("Confirmo que o funcionário conferiu as peças entregues.")
-        
-        btn_salvar = st.form_submit_button("Finalizar e Salvar Registro")
+        btn_salvar = st.form_submit_button("Salvar no Histórico", type="primary")
 
         if btn_salvar:
             if not funcionario or not pecas_entregues:
-                st.error("Por favor, preencha o nome do funcionário e o que está sendo entregue.")
+                st.error("Erro: Preencha o nome do funcionário e as peças entregues.")
             elif "Troca" in tipo_acao and not pecas_devolvidas:
-                st.warning("⚠️ Para trocas, você deve descrever o que foi devolvido no campo acima.")
-            elif not confirmacao:
-                st.error("Por favor, marque o campo de confirmação.")
+                st.warning("⚠️ Atenção: Para movimentações de 'Troca', é obrigatório descrever as peças devolvidas.")
             else:
-                # Criar DataFrame com a nova linha
-                nova_movimentacao = pd.DataFrame([{
-                    "Data": data,
-                    "Funcionario": funcionario,
-                    "Setor": setor,
-                    "Ação": tipo_acao,
-                    "Entregue": pecas_entregues,
-                    "Devolvido": pecas_devolvidas,
-                    "Obs": obs
-                }])
-                
-                # Ler dados atuais e concatenar
-                df_atual = conn.read(worksheet="movimentacoes")
-                df_final = pd.concat([df_atual, nova_movimentacao], ignore_index=True)
-                
-                # Salvar na Planilha
-                conn.update(worksheet="movimentacoes", data=df_final)
-                
-                st.success(f"Registro de {funcionario} salvo com sucesso!")
-                st.balloons()
+                with st.spinner("Salvando dados na planilha..."):
+                    # Criar DataFrame com o novo registro
+                    nova_linha = pd.DataFrame([{
+                        "Data": data,
+                        "Funcionario": funcionario,
+                        "Setor": setor,
+                        "Acao": tipo_acao,
+                        "Entregue": pecas_entregues,
+                        "Devolvido": pecas_devolvidas if pecas_devolvidas else "-",
+                        "Obs": obs if obs else "-"
+                    }])
+                    
+                    # Unir o histórico antigo com a nova linha
+                    df_final = pd.concat([df_historico, nova_linha], ignore_index=True)
+                    
+                    # Atualizar a planilha do Google
+                    conn.update(worksheet="movimentacoes", data=df_final)
+                    
+                    st.success(f"Sucesso! Registro de {funcionario} salvo.")
+                    st.rerun()
 
-# --- VISUALIZAÇÃO DOS ÚLTIMOS REGISTROS ---
-st.subheader("📋 Histórico de Entregas")
-try:
-    dados_exibicao = conn.read(worksheet="movimentacoes")
-    if not dados_exibicao.empty:
-        # Mostra os 10 registros mais recentes no topo
-        st.dataframe(dados_exibicao.iloc[::-1].head(10), use_container_width=True)
-    else:
-        st.info("Aguardando o primeiro registro...")
-except:
-    st.error("Erro ao carregar a planilha. Verifique a conexão nos Secrets.")
+# --- EXIBIÇÃO DO HISTÓRICO ---
+st.divider()
+st.subheader("📜 Histórico de Movimentações")
+
+if not df_historico.empty:
+    # Cria uma barra de pesquisa simples para buscar por funcionário
+    busca = st.text_input("🔍 Buscar por nome do funcionário:")
+    
+    df_exibicao = df_historico.copy()
+    if busca:
+        df_exibicao = df_exibicao[df_exibicao["Funcionario"].str.contains(busca, case=False, na=False)]
+    
+    # Mostra o histórico invertido (o mais recente no topo)
+    st.dataframe(df_exibicao.iloc[::-1], use_container_width=True, hide_index=True)
+else:
+    st.info("Nenhum registro encontrado na planilha.")
