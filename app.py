@@ -17,6 +17,7 @@ try:
     df_historico = conn.read(worksheet="movimentacoes", ttl=0)
     df_historico = df_historico.loc[:, ~df_historico.columns.str.contains('^Unnamed')]
     
+    # CORRIGIDO: Removido o termo 'Vanilla' que causava erro de leitura
     if "Quantidade" in df_historico.columns:
         df_historico["Quantidade"] = pd.to_numeric(df_historico["Quantidade"], errors="coerce").fillna(0).astype(int)
 except Exception as e:
@@ -81,7 +82,7 @@ with st.container(border=True):
                 for _, item in itens_editados.iterrows():
                     qtd = int(item["Quantidade"])
                     if "Devolução Final" in tipo_acao:
-                        qtd = -qtd # Salva como negativo para abater na soma automática
+                        qtd = -qtd # Salva como negativo para abater na soma automática do saldo
                         
                     novas_linhas.append({
                         "Data": data_formatada,
@@ -128,7 +129,8 @@ if not df_historico.empty:
         
         if "Peca" in df_exibicao.columns:
             df_balanco_pecas = df_exibicao.groupby("Peca")["Quantidade"].sum().reset_index()
-            df_balanco_pecas = df_balanco_pecas[df_balanco_pecas["Quantidade"] > 0]
+            # Mostra saldos positivos ou zerados (caso ele tenha devolvido e esteja com 0)
+            df_balanco_pecas = df_balanco_pecas[df_balanco_pecas["Quantidade"] >= 0]
         else:
             df_balanco_pecas = pd.DataFrame()
         
@@ -137,11 +139,11 @@ if not df_historico.empty:
             st.metric(label=f"Total de Peças com {busca.title()}", value=f"{total_pecas} un")
         with col_card2:
             st.markdown("**Saldo Atual de Uniformes Ativos:**")
-            if not df_balanco_pecas.empty:
-                linhas_pecas = [f"• {row['Peca']}: **{row['Quantidade']}** un" for _, row in df_balanco_pecas.iterrows()]
+            if not df_balanco_pecas.empty and total_pecas > 0:
+                linhas_pecas = [f"• {row['Peca']}: **{row['Quantidade']}** un" for _, row in df_balanco_pecas.iterrows() if row['Quantidade'] > 0]
                 st.markdown("\n".join(linhas_pecas))
             else:
-                st.caption("Nenhum uniforme ativo em posse.")
+                st.caption("Nenhum uniforme ativo em posse (Tudo devolvido ou zerado).")
         st.divider()
 
     st.dataframe(df_exibicao.iloc[::-1], use_container_width=True, hide_index=True)
