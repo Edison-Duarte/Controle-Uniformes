@@ -18,7 +18,7 @@ try:
     df_historico = df_historico.loc[:, ~df_historico.columns.str.contains('^Unnamed')]
     
     if "Quantidade" in df_historico.columns:
-        df_historico["Quantidade"] = pd.to_numeric(df_historico["Quantidade"], errors="coerce").fillna(0).astype(int)
+        df_historico["Quantidade"] = pd.to_numeric(df_historico["Vanilla"], errors="coerce").fillna(0).astype(int)
 except Exception as e:
     st.error(f"Erro ao conectar com a planilha: {e}")
     df_historico = pd.DataFrame(columns=["Data", "Funcionario", "Setor", "Acao", "Quantidade", "Peca", "Devolvido", "Obs"])
@@ -45,23 +45,19 @@ with st.container(border=True):
             pecas_devolvidas = "-"
 
     st.divider()
-    st.markdown("**📋 Itens da Movimentação** (Clique nas linhas para preencher e em '+' para adicionar mais peças)")
+    st.markdown("**📋 Itens da Movimentação** (Clique duas vezes na célula para digitar a quantidade e o nome da peça)")
     
-    # Tabela dinâmica para inserção de múltiplos uniformes com quantidade separada
-    df_itens_padrao = pd.DataFrame([{"Quantidade": 1, "Peça de Roupa": "Camisa Polo M"}])
+    # Tabela dinâmica configurada com Texto Livre para a Peça de Roupa
+    df_itens_padrao = pd.DataFrame([{"Quantidade": 1, "Peça de Roupa": ""}])
     itens_editados = st.data_editor(
         df_itens_padrao,
         num_rows="dynamic",
         use_container_width=True,
         column_config={
             "Quantidade": st.column_config.NumberColumn("Qtd", min_value=1, step=1, default=1, required=True),
-            "Peça de Roupa": st.column_config.SelectboxColumn(
+            "Peça de Roupa": st.column_config.TextColumn(
                 "Peça de Roupa",
-                options=[
-                    "Camisa Polo P", "Camisa Polo M", "Camisa Polo G", "Camisa Polo GG",
-                    "Bermuda 40", "Bermuda 42", "Bermuda 44", "Bermuda 46",
-                    "Calça M", "Calça G", "Boné", "Bota de Segurança (Par)"
-                ],
+                placeholder="Ex: Camisa Polo M, Bota nº 41, Bermuda 42...",
                 required=True
             )
         }
@@ -75,8 +71,8 @@ with st.container(border=True):
             st.error("Erro: Preencha o nome do funcionário.")
         elif ("Troca" in tipo_acao and (not pecas_devolvidas or pecas_devolvidas == "-")):
             st.warning("⚠️ Atenção: Para movimentações de 'Troca', é necessário descrever as peças devolvidas.")
-        elif itens_editados.empty or itens_editados["Peça de Roupa"].isna().any():
-            st.error("Erro: Adicione pelo menos uma peça válida na tabela de itens.")
+        elif itens_editados.empty or itens_editados["Peça de Roupa"].isna().any() or (itens_editados["Peça de Roupa"] == "").any():
+            st.error("Erro: Adicione o nome da peça para todas as linhas preenchidas.")
         else:
             with st.spinner("Salvando dados na planilha..."):
                 data_formatada = data_selecionada.strftime('%d/%m/%Y')
@@ -85,7 +81,7 @@ with st.container(border=True):
                 for _, item in itens_editados.iterrows():
                     qtd = int(item["Quantidade"])
                     if "Devolução Final" in tipo_acao:
-                        qtd = -qtd # Fica negativo para abater automaticamente na soma total do saldo
+                        qtd = -qtd # Salva como negativo para abater na soma automática
                         
                     novas_linhas.append({
                         "Data": data_formatada,
@@ -93,7 +89,7 @@ with st.container(border=True):
                         "Setor": setor,
                         "Acao": tipo_acao,
                         "Quantidade": qtd,
-                        "Peca": item["Peça de Roupa"],
+                        "Peca": item["Peça de Roupa"].strip(), # Remove espaços extras acidentais
                         "Devolvido": pecas_devolvidas,
                         "Obs": obs if obs else "-"
                     })
@@ -130,7 +126,6 @@ if not df_historico.empty:
         # --- CARD DO TOTALIZADOR INTELIGENTE ---
         total_pecas = df_exibicao["Quantidade"].sum()
         
-        # Agrupamento por tipo de peça para detalhar a posse atual
         if "Peca" in df_exibicao.columns:
             df_balanco_pecas = df_exibicao.groupby("Peca")["Quantidade"].sum().reset_index()
             df_balanco_pecas = df_balanco_pecas[df_balanco_pecas["Quantidade"] > 0]
