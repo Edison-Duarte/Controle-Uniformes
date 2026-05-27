@@ -18,7 +18,7 @@ try:
     df_historico = df_historico.loc[:, ~df_historico.columns.str.contains('^Unnamed')]
     
     if "Quantidade" in df_historico.columns:
-        df_historico["Quantidade"] = pd.to_numeric(df_historico["Vanilla"], errors="coerce").fillna(0).astype(int)
+        df_historico["Quantidade"] = pd.to_numeric(df_historico["Quantidade"], errors="coerce").fillna(0).astype(int)
 except Exception as e:
     st.error(f"Erro ao conectar com a planilha: {e}")
     df_historico = pd.DataFrame(columns=["Data", "Funcionario", "Setor", "Acao", "Quantidade", "Peca", "Devolvido", "Obs"])
@@ -89,7 +89,7 @@ with st.container(border=True):
                         "Setor": setor,
                         "Acao": tipo_acao,
                         "Quantidade": qtd,
-                        "Peca": item["Peça de Roupa"].strip(), # Remove espaços extras acidentais
+                        "Peca": item["Peça de Roupa"].strip(),
                         "Devolvido": pecas_devolvidas,
                         "Obs": obs if obs else "-"
                     })
