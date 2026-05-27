@@ -28,7 +28,7 @@ with st.container(border=True):
         col1, col2 = st.columns(2)
         
         with col1:
-            # CORREÇÃO: Pegar o objeto date puramente aqui
+            # AJUSTE: O objeto date bruto deve ser coletado aqui
             data_selecionada = st.date_input("Data da Ação", datetime.now())
             funcionario = st.text_input("Nome Completo do Funcionário")
             setor = st.selectbox("Setor/Departamento", 
@@ -54,7 +54,7 @@ with st.container(border=True):
                 st.warning("⚠️ Atenção: Para movimentações de 'Troca', é obrigatório descrever as peças devolvidas.")
             else:
                 with st.spinner("Salvando dados na planilha..."):
-                    # CORREÇÃO: Formatar a data para string padrão brasileiro apenas aqui
+                    # AJUSTE: Formatação da data acontece com segurança aqui
                     data_formatada = data_selecionada.strftime('%d/%m/%Y')
                     
                     # Criar DataFrame com o novo registro
@@ -68,13 +68,13 @@ with st.container(border=True):
                         "Obs": obs if obs else "-"
                     }])
                     
-                    # Garantir que os tipos batam antes da junção
+                    # Forçar coluna de data antiga para texto para evitar conflitos na junção
                     df_historico["Data"] = df_historico["Data"].astype(str)
                     
                     # Unir o histórico antigo com a nova linha
                     df_final = pd.concat([df_historico, nova_linha], ignore_index=True)
                     
-                    # CORREÇÃO: Proteção para falsos positivos de erro no update do GSheets
+                    # AJUSTE: Captura de falsos positivos no salvamento do Google Sheets
                     try:
                         conn.update(worksheet="movimentacoes", data=df_final)
                         st.success(f"Sucesso! Registro de {funcionario} salvo.")
@@ -84,7 +84,7 @@ with st.container(border=True):
                             st.success(f"Sucesso! Registro de {funcionario} salvo.")
                             st.rerun()
                         else:
-                            st.error(f"Erro real ao salvar: {ex}")
+                            st.error(f"Erro ao salvar: {ex}")
 
 # --- EXIBIÇÃO DO HISTÓRICO ---
 st.divider()
