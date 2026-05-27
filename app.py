@@ -17,7 +17,6 @@ try:
     df_historico = conn.read(worksheet="movimentacoes", ttl=0)
     df_historico = df_historico.loc[:, ~df_historico.columns.str.contains('^Unnamed')]
     
-    # CORRIGIDO: Removido o termo 'Vanilla' que causava erro de leitura
     if "Quantidade" in df_historico.columns:
         df_historico["Quantidade"] = pd.to_numeric(df_historico["Quantidade"], errors="coerce").fillna(0).astype(int)
 except Exception as e:
@@ -46,9 +45,9 @@ with st.container(border=True):
             pecas_devolvidas = "-"
 
     st.divider()
-    st.markdown("**📋 Itens da Movimentação** (Clique duas vezes na célula para digitar a quantidade e o nome da peça)")
+    st.markdown("**📋 Itens da Movimentação** (Clique duas vezes na célula vazia para digitar a quantidade e o nome da peça)")
     
-    # Tabela dinâmica configurada com Texto Livre para a Peça de Roupa
+    # Tabela dinâmica corrigida (sem o parâmetro inválido placeholder)
     df_itens_padrao = pd.DataFrame([{"Quantidade": 1, "Peça de Roupa": ""}])
     itens_editados = st.data_editor(
         df_itens_padrao,
@@ -57,8 +56,7 @@ with st.container(border=True):
         column_config={
             "Quantidade": st.column_config.NumberColumn("Qtd", min_value=1, step=1, default=1, required=True),
             "Peça de Roupa": st.column_config.TextColumn(
-                "Peça de Roupa",
-                placeholder="Ex: Camisa Polo M, Bota nº 41, Bermuda 42...",
+                "Peça de Roupa (Ex: Camisa Polo M, Bota nº 41...)",
                 required=True
             )
         }
@@ -90,7 +88,7 @@ with st.container(border=True):
                         "Setor": setor,
                         "Acao": tipo_acao,
                         "Quantidade": qtd,
-                        "Peca": item["Peça de Roupa"].strip(),
+                        "Peca": str(item["Peça de Roupa"]).strip(),
                         "Devolvido": pecas_devolvidas,
                         "Obs": obs if obs else "-"
                     })
@@ -129,7 +127,6 @@ if not df_historico.empty:
         
         if "Peca" in df_exibicao.columns:
             df_balanco_pecas = df_exibicao.groupby("Peca")["Quantidade"].sum().reset_index()
-            # Mostra saldos positivos ou zerados (caso ele tenha devolvido e esteja com 0)
             df_balanco_pecas = df_balanco_pecas[df_balanco_pecas["Quantidade"] >= 0]
         else:
             df_balanco_pecas = pd.DataFrame()
