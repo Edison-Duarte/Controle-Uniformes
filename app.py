@@ -13,7 +13,6 @@ st.markdown("Os dados abaixo são sincronizados diretamente com o Google Sheets.
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 # --- CARREGAR HISTÓRICO ---
-# ttl=0 garante que o Streamlit sempre busque os dados mais recentes sem usar cache antigo
 try:
     df_historico = conn.read(worksheet="movimentacoes", ttl=0)
     # Remove colunas fantasma se houverem
@@ -29,7 +28,8 @@ with st.container(border=True):
         col1, col2 = st.columns(2)
         
         with col1:
-            data = st.date_input("Data da Ação", datetime.now()).strftime('%d/%m/%Y')
+            # CORREÇÃO: Pegar o objeto date puramente aqui
+            data_selecionada = st.date_input("Data da Ação", datetime.now())
             funcionario = st.text_input("Nome Completo do Funcionário")
             setor = st.selectbox("Setor/Departamento", 
                                ["Náutica", "Administração", "Manutenção", "Portaria", "Limpeza", "Copa/Cozinha"])
@@ -54,9 +54,12 @@ with st.container(border=True):
                 st.warning("⚠️ Atenção: Para movimentações de 'Troca', é obrigatório descrever as peças devolvidas.")
             else:
                 with st.spinner("Salvando dados na planilha..."):
+                    # CORREÇÃO: Formatar a data para string padrão brasileiro apenas aqui
+                    data_formatada = data_selecionada.strftime('%d/%m/%Y')
+                    
                     # Criar DataFrame com o novo registro
                     nova_linha = pd.DataFrame([{
-                        "Data": data,
+                        "Data": data_formatada,
                         "Funcionario": funcionario,
                         "Setor": setor,
                         "Acao": tipo_acao,
@@ -65,21 +68,29 @@ with st.container(border=True):
                         "Obs": obs if obs else "-"
                     }])
                     
+                    # Garantir que os tipos batam antes da junção
+                    df_historico["Data"] = df_historico["Data"].astype(str)
+                    
                     # Unir o histórico antigo com a nova linha
                     df_final = pd.concat([df_historico, nova_linha], ignore_index=True)
                     
-                    # Atualizar a planilha do Google
-                    conn.update(worksheet="movimentacoes", data=df_final)
-                    
-                    st.success(f"Sucesso! Registro de {funcionario} salvo.")
-                    st.rerun()
+                    # CORREÇÃO: Proteção para falsos positivos de erro no update do GSheets
+                    try:
+                        conn.update(worksheet="movimentacoes", data=df_final)
+                        st.success(f"Sucesso! Registro de {funcionario} salvo.")
+                        st.rerun()
+                    except Exception as ex:
+                        if "200" in str(ex):
+                            st.success(f"Sucesso! Registro de {funcionario} salvo.")
+                            st.rerun()
+                        else:
+                            st.error(f"Erro real ao salvar: {ex}")
 
 # --- EXIBIÇÃO DO HISTÓRICO ---
 st.divider()
 st.subheader("📜 Histórico de Movimentações")
 
 if not df_historico.empty:
-    # Cria uma barra de pesquisa simples para buscar por funcionário
     busca = st.text_input("🔍 Buscar por nome do funcionário:")
     
     df_exibicao = df_historico.copy()
