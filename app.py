@@ -31,84 +31,120 @@ with st.container(border=True):
     
     with col1:
         data_selecionada = st.date_input("Data da Ação", datetime.now())
-        funcionario = st.text_input("Nome Completo do Funcionário")
+        tipo_acao = st.selectbox("Tipo de Movimentação", 
+                               ["Entrega Inicial (Admissão)", "Entrega de Peças Extras", "Troca por Desgaste", "Devolução de Uniforme"])
+        
+        # Lista única de funcionários já existentes na planilha para evitar erros
+        lista_funcionarios = sorted(df_historico["Funcionario"].dropna().unique().tolist()) if not df_historico.empty else []
+
+        # Se for DEVOLUÇÃO, usamos o menu suspenso. Se for ENTREGA, permitimos digitar o nome (caso seja um funcionário novo).
+        if tipo_acao == "Devolução de Uniforme":
+            if lista_funcionarios:
+                funcionario = st.selectbox("Selecione o Funcionário", lista_funcionarios)
+            else:
+                st.warning("⚠️ Nenhum funcionário cadastrado no sistema para realizar devolução.")
+                funcionario = ""
+        else:
+            funcionario = st.text_input("Nome Completo do Funcionário")
+            
         setor = st.selectbox("Setor/Departamento", 
                            ["Náutica", "Administração", "Manutenção", "Portaria", "Limpeza", "Copa/Cozinha", "Flats"])
     
     with col2:
-        tipo_acao = st.selectbox("Tipo de Movimentação", 
-                               ["Entrega Inicial (Admissão)", "Entrega de Peças Extras", "Troca por Desgaste", "Devolução de Uniforme"])
+        obs = st.text_input("Observações Gerais")
         
-        # Se for Devolução, abrimos o campo para capturar o motivo exato da baixa
-        if tipo_acao == "Devolução de Uniforme":
-            motivo_devolucao = st.selectbox("Motivo da Devolução (Motivo da Baixa)",
+        # Fluxo condicional para Devolução Pura
+        if tipo_acao == "Devolução de Uniforme" and funcionario:
+            motivo_devolucao = st.selectbox("Motivo da Devolução",
                                             ["Uniforme Danificado / Rasgado", "Desligamento / Demissão", "Ajuste de Tamanho", "Outro"])
             pecas_devolvidas = f"Baixa: {motivo_devolucao}"
+            
+            # Calcular o saldo atual do funcionário selecionado para descobrir o que ele tem em posse
+            df_func = df_historico[df_historico["Funcionario"] == funcionario]
+            if not df_func.empty and "Peca" in df_func.columns:
+                df_saldo = df_func.groupby("Peca")["Quantidade"].sum().reset_index()
+                # Pegar apenas as peças cujo saldo atual é maior que zero
+                pecas_em_posse = df_saldo[df_saldo["Quantidade"] > 0]["Peca"].tolist()
+            else:
+                pecas_em_posse = []
+                
+            st.divider()
+            if pecas_em_posse:
+                st.markdown("### 🔍 Baixa de Peça Específica")
+                peça_para_baixa = st.selectbox("Escolha a peça que está sendo devolvida:", pecas_em_posse)
+                
+                # Descobrir o limite máximo que ele pode devolver dessa peça
+                max_devolucao = int(df_saldo[df_saldo["Peca"] == peça_para_baixa]["Quantidade"].values[0])
+                qtd_devolucao = st.number_input(f"Quantidade Devolvida (Máximo em posse: {max_devolucao})", min_value=1, max_value=max_devolucao, value=1, step=1)
+            else:
+                st.error("❌ Este funcionário não possui nenhum uniforme ativo no sistema para dar baixa.")
+                peça_para_baixa = None
+                
         elif tipo_acao == "Troca por Desgaste":
             pecas_devolvidas = st.text_area("Peças Recebidas de Volta (Descreva o material trocado)")
         else:
             pecas_devolvidas = "-"
-            
-        obs = st.text_input("Observações Gerais")
 
-    st.divider()
-    
-    # Mensagem dinâmica para orientar o usuário dependendo da ação
-    if tipo_acao == "Devolução de Uniforme":
-        st.markdown("**📋 Itens Sendo Devolvidos** (Digite a quantidade e o nome do uniforme que está recebendo de volta para dar baixa)")
-    else:
+    # Se NÃO for devolução, exibe a tabela dinâmica padrão para lançar as entregas/trocas
+    if tipo_acao != "Devolução de Uniforme":
+        st.divider()
         st.markdown("**📋 Itens da Movimentação** (Clique duas vezes na célula vazia para digitar a quantidade e o nome da peça)")
-    
-    # Tabela dinâmica configurada com Texto Livre para a Peça de Roupa
-    df_itens_padrao = pd.DataFrame([{"Quantidade": 1, "Peça de Roupa": ""}])
-    itens_editados = st.data_editor(
-        df_itens_padrao,
-        num_rows="dynamic",
-        use_container_width=True,
-        column_config={
-            "Quantidade": st.column_config.NumberColumn("Qtd", min_value=1, step=1, default=1, required=True),
-            "Peça de Roupa": st.column_config.TextColumn(
-                "Peça de Roupa (Ex: Camisa Polo M, Bermuda 42...)",
-                required=True
-            )
-        }
-    )
+        
+        df_itens_padrao = pd.DataFrame([{"Quantidade": 1, "Peça de Roupa": ""}])
+        itens_editados = st.data_editor(
+            df_itens_padrao,
+            num_rows="dynamic",
+            use_container_width=True,
+            column_config={
+                "Quantidade": st.column_config.NumberColumn("Qtd", min_value=1, step=1, default=1, required=True),
+                "Peça de Roupa": st.column_config.TextColumn("Peça de Roupa", required=True)
+            }
+        )
     
     st.divider()
     btn_salvar = st.button("🚀 Salvar no Histórico", type="primary", use_container_width=True)
 
     if btn_salvar:
         if not funcionario:
-            st.error("Erro: Preencha o nome do funcionário.")
+            st.error("Erro: Selecione ou preencha o nome do funcionário.")
         elif (tipo_acao == "Troca por Desgaste" and (not pecas_devolvidas or pecas_devolvidas == "-")):
             st.warning("⚠️ Atenção: Para movimentações de 'Troca', é necessário descrever as peças substituídas.")
-        elif itens_editados.empty or itens_editados["Peça de Roupa"].isna().any() or (itens_editados["Peça de Roupa"] == "").any():
+        elif tipo_acao == "Devolução de Uniforme" and not peça_para_baixa:
+            st.error("Erro: Não é possível salvar uma devolução para quem não possui peças em posse.")
+        elif tipo_acao != "Devolução de Uniforme" and (itens_editados.empty or itens_editados["Peça de Roupa"].isna().any() or (itens_editados["Peça de Roupa"] == "").any()):
             st.error("Erro: Adicione o nome da peça para todas as linhas preenchidas.")
         else:
             with st.spinner("Salvando dados na planilha..."):
                 data_formatada = data_selecionada.strftime('%d/%m/%Y')
                 novas_linhas = []
                 
-                for _, item in itens_editados.iterrows():
-                    qtd = int(item["Quantidade"])
-                    
-                    # REGRA DE OURO: Se for devolução pura (baixa), multiplicamos por -1 para subtrair do saldo dele
-                    if tipo_acao == "Devolução de Uniforme":
-                        qtd = -abs(qtd) 
-                        
+                # Cenário 1: Salvando a DEVOLUÇÃO direcionada
+                if tipo_acao == "Devolução de Uniforme":
                     novas_linhas.append({
                         "Data": data_formatada,
                         "Funcionario": funcionario,
                         "Setor": setor,
                         "Acao": tipo_acao,
-                        "Quantidade": qtd,
-                        "Peca": str(item["Peça de Roupa"]).strip(),
+                        "Quantidade": -int(qtd_devolucao), # Força o valor negativo automático para o Sheets
+                        "Peca": peça_para_baixa,
                         "Devolvido": pecas_devolvidas,
                         "Obs": obs if obs else "-"
                     })
+                # Cenário 2: Salvando as ENTREGAS comuns vindas da tabela
+                else:
+                    for _, item in itens_editados.iterrows():
+                        novas_linhas.append({
+                            "Data": data_formatada,
+                            "Funcionario": funcionario,
+                            "Setor": setor,
+                            "Acao": tipo_acao,
+                            "Quantidade": int(item["Quantidade"]),
+                            "Peca": str(item["Peça de Roupa"]).strip(),
+                            "Devolvido": pecas_devolvidas,
+                            "Obs": obs if obs else "-"
+                        })
                 
                 df_novas = pd.DataFrame(novas_linhas)
-                
                 df_historico["Data"] = df_historico["Data"].astype(str)
                 df_historico["Quantidade"] = df_historico["Quantidade"].astype(int)
                 
@@ -116,11 +152,11 @@ with st.container(border=True):
                 
                 try:
                     conn.update(worksheet="movimentacoes", data=df_final)
-                    st.success(f"Sucesso! Baixa de uniforme de {funcionario} realizada.")
+                    st.success("Sucesso! Operação gravada na planilha.")
                     st.rerun()
                 except Exception as ex:
                     if "200" in str(ex):
-                        st.success(f"Sucesso! Baixa de uniforme de {funcionario} realizada.")
+                        st.success("Sucesso! Operação gravada na planilha.")
                         st.rerun()
                     else:
                         st.error(f"Erro ao salvar: {ex}")
@@ -141,7 +177,6 @@ if not df_historico.empty:
         
         if "Peca" in df_exibicao.columns:
             df_balanco_pecas = df_exibicao.groupby("Peca")["Quantidade"].sum().reset_index()
-            # Mostra apenas o saldo real positivo que sobrou com o funcionário
             df_balanco_pecas = df_balanco_pecas[df_balanco_pecas["Quantidade"] > 0]
         else:
             df_balanco_pecas = pd.DataFrame()
