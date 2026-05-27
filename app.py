@@ -32,7 +32,7 @@ with st.container(border=True):
             data_selecionada = st.date_input("Data da Ação", datetime.now())
             funcionario = st.text_input("Nome Completo do Funcionário")
             setor = st.selectbox("Setor/Departamento", 
-                               ["Náutica", "Administração", "Manutenção", "Portaria", "Limpeza", "Copa/Cozinha"])
+                               ["Náutica", "Administração", "Manutenção", "Portaria", "Limpeza", "Copa/Cozinha", "Flats"])
         
         with col2:
             tipo_acao = st.selectbox("Tipo de Movimentação", 
