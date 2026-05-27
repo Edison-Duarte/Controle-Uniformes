@@ -36,18 +36,26 @@ with st.container(border=True):
                            ["Náutica", "Administração", "Manutenção", "Portaria", "Limpeza", "Copa/Cozinha", "Flats"])
     
     with col2:
+        # Atualizado com opções claras de fluxo de saída e retorno
         tipo_acao = st.selectbox("Tipo de Movimentação", 
-                               ["Entrega Inicial (Admissão)", "Troca por Desgaste", "Substituição (Dano)", "Devolução Final"])
-        obs = st.text_input("Observações Gerais")
-        if "Troca" in tipo_acao or "Devolução" in tipo_acao:
-            pecas_devolvidas = st.text_area("Peças Recebidas de Volta (Obrigatório para trocas/devoluções)")
+                               ["Entrega Inicial (Admissão)", "Entrega de Peças Extras", "Troca por Desgaste", "Devolução de Uniforme"])
+        
+        # Campo condicional: Se for Devolução, abre espaço para detalhar o motivo (ex: Rasgado, Demissão, etc.)
+        if tipo_acao == "Devolução de Uniforme":
+            motivo_devolucao = st.selectbox("Motivo da Devolução",
+                                            ["Uniforme Danificado / Rasgado", "Desligamento / Demissão", "Ajuste de Tamanho", "Outro"])
+            pecas_devolvidas = f"Devolução: {motivo_devolucao}"
+        elif tipo_acao == "Troca por Desgaste":
+            pecas_devolvidas = st.text_area("Peças Recebidas de Volta (Descreva o estado do material trocado)")
         else:
             pecas_devolvidas = "-"
+            
+        obs = st.text_input("Observações Gerais")
 
     st.divider()
     st.markdown("**📋 Itens da Movimentação** (Clique duas vezes na célula vazia para digitar a quantidade e o nome da peça)")
     
-    # Tabela dinâmica corrigida (sem o parâmetro inválido placeholder)
+    # Tabela dinâmica configurada com Texto Livre para a Peça de Roupa
     df_itens_padrao = pd.DataFrame([{"Quantidade": 1, "Peça de Roupa": ""}])
     itens_editados = st.data_editor(
         df_itens_padrao,
@@ -56,7 +64,7 @@ with st.container(border=True):
         column_config={
             "Quantidade": st.column_config.NumberColumn("Qtd", min_value=1, step=1, default=1, required=True),
             "Peça de Roupa": st.column_config.TextColumn(
-                "Peça de Roupa (Ex: Camisa Polo M, Bota nº 41...)",
+                "Peça de Roupa (Ex: Camisa Polo M, Bermuda 42...)",
                 required=True
             )
         }
@@ -68,8 +76,8 @@ with st.container(border=True):
     if btn_salvar:
         if not funcionario:
             st.error("Erro: Preencha o nome do funcionário.")
-        elif ("Troca" in tipo_acao and (not pecas_devolvidas or pecas_devolvidas == "-")):
-            st.warning("⚠️ Atenção: Para movimentações de 'Troca', é necessário descrever as peças devolvidas.")
+        elif (tipo_acao == "Troca por Desgaste" and (not pecas_devolvidas or pecas_devolvidas == "-")):
+            st.warning("⚠️ Atenção: Para movimentações de 'Troca', é necessário descrever as peças substituídas.")
         elif itens_editados.empty or itens_editados["Peça de Roupa"].isna().any() or (itens_editados["Peça de Roupa"] == "").any():
             st.error("Erro: Adicione o nome da peça para todas as linhas preenchidas.")
         else:
@@ -79,8 +87,10 @@ with st.container(border=True):
                 
                 for _, item in itens_editados.iterrows():
                     qtd = int(item["Quantidade"])
-                    if "Devolução Final" in tipo_acao:
-                        qtd = -qtd # Salva como negativo para abater na soma automática do saldo
+                    
+                    # REGRA MATEMÁTICA: Se for Devolução de Uniforme, a quantidade entra negativa para abater do saldo
+                    if tipo_acao == "Devolução de Uniforme":
+                        qtd = -qtd 
                         
                     novas_linhas.append({
                         "Data": data_formatada,
@@ -127,7 +137,8 @@ if not df_historico.empty:
         
         if "Peca" in df_exibicao.columns:
             df_balanco_pecas = df_exibicao.groupby("Peca")["Quantidade"].sum().reset_index()
-            df_balanco_pecas = df_balanco_pecas[df_balanco_pecas["Quantidade"] >= 0]
+            # Filtra apenas registros cujo saldo final calculado em posse seja maior que zero
+            df_balanco_pecas = df_balanco_pecas[df_balanco_pecas["Quantidade"] > 0]
         else:
             df_balanco_pecas = pd.DataFrame()
         
@@ -135,9 +146,9 @@ if not df_historico.empty:
         with col_card1:
             st.metric(label=f"Total de Peças com {busca.title()}", value=f"{total_pecas} un")
         with col_card2:
-            st.markdown("**Saldo Atual de Uniformes Ativos:**")
+            st.markdown("**Saldo Atual de Uniformes Ativos (Em Posse):**")
             if not df_balanco_pecas.empty and total_pecas > 0:
-                linhas_pecas = [f"• {row['Peca']}: **{row['Quantidade']}** un" for _, row in df_balanco_pecas.iterrows() if row['Quantidade'] > 0]
+                linhas_pecas = [f"• {row['Peca']}: **{row['Quantidade']}** un" for _, row in df_balanco_pecas.iterrows()]
                 st.markdown("\n".join(linhas_pecas))
             else:
                 st.caption("Nenhum uniforme ativo em posse (Tudo devolvido ou zerado).")
