@@ -223,3 +223,20 @@ if not df_historico.empty:
     st.dataframe(df_exibicao.iloc[::-1], use_container_width=True, hide_index=True)
 else:
     st.info("Nenhum registro encontrado na planilha.")
+
+# --- ASSINATURA FINALIZADA COM FONTE GABRIOLA ---
+st.markdown("---")
+
+st.markdown(
+    """
+    <div style='text-align: center; margin-top: 100px;'>
+        <p style='margin-bottom: -8px; font-family: "Gabriola", serif; font-style: italic; font-size: 18px; color: #0056b3;'>
+            Developed by:
+        </p>
+        <p style='font-family: "Gabriola", serif; font-size: 20px; font-weight: 100; color: #1e7044;'>
+            Edison Duarte Filho®
+        </p>
+    </div>
+    """,
+    unsafe_allow_html=True
+)
